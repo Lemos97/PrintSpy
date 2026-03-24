@@ -744,6 +744,8 @@ async function getElegooStatus(ip: string): Promise<any> {
                   estimatedPrintTime: printInfo.TotalTicks ? Math.floor(printInfo.TotalTicks / 1000) : null,
                   printTime: printInfo.CurrentTicks ? Math.floor(printInfo.CurrentTicks / 1000) : null,
                   printTimeLeft: printTimeLeft,
+                  currentLayer: currentLayer !== undefined ? currentLayer : null,
+                  totalLayer: totalLayers !== undefined ? totalLayers : null,
                 };
               }
 
