@@ -13,7 +13,7 @@ interface StatusRequest {
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 5000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
+
   try {
     const response = await fetch(url, {
       ...options,
@@ -32,11 +32,11 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout 
 
 function getAuthHeaders(auth: { type: string; key?: string; apiKey?: string } | null) {
   const headers: Record<string, string> = {};
-  
+
   if (!auth) {
     return headers;
   }
-  
+
   // Application Key authentication (Bearer token) - recommended method
   if (auth.type === 'applicationKey' && auth.key) {
     headers['Authorization'] = `Bearer ${auth.key}`;
@@ -46,7 +46,7 @@ function getAuthHeaders(auth: { type: string; key?: string; apiKey?: string } | 
     headers['Authorization'] = `Bearer ${auth.apiKey}`;
     headers['X-Api-Key'] = auth.apiKey;
   }
-  
+
   return headers;
 }
 
@@ -157,18 +157,18 @@ function getBackoffDelay(retryCount: number): number {
 
 function shouldAttemptConnection(ip: string): { shouldAttempt: boolean; reason?: string; waitTime?: number } {
   const state = retryStateMap.get(ip);
-  
+
   if (!state) {
     // No previous attempts, allow connection
     return { shouldAttempt: true };
   }
-  
+
   const now = Date.now();
-  
+
   // If we've exceeded max retries, check cooldown period
   if (state.retryCount >= MAX_RETRIES) {
     const timeSinceLastAttempt = now - state.lastAttemptTime;
-    
+
     if (timeSinceLastAttempt < COOLDOWN_PERIOD_MS) {
       const remainingWait = COOLDOWN_PERIOD_MS - timeSinceLastAttempt;
       return {
@@ -186,11 +186,11 @@ function shouldAttemptConnection(ip: string): { shouldAttempt: boolean; reason?:
       return { shouldAttempt: true };
     }
   }
-  
+
   // Check if we need to wait for backoff delay
   const timeSinceLastAttempt = now - state.lastAttemptTime;
   const backoffDelay = getBackoffDelay(state.retryCount);
-  
+
   if (timeSinceLastAttempt < backoffDelay) {
     const remainingWait = backoffDelay - timeSinceLastAttempt;
     return {
@@ -199,7 +199,7 @@ function shouldAttemptConnection(ip: string): { shouldAttempt: boolean; reason?:
       waitTime: remainingWait,
     };
   }
-  
+
   return { shouldAttempt: true };
 }
 
@@ -209,9 +209,9 @@ function recordConnectionAttempt(ip: string, success: boolean) {
     lastAttemptTime: 0,
     lastSuccessTime: null,
   };
-  
+
   const now = Date.now();
-  
+
   if (success) {
     // Reset retry count on success
     retryStateMap.set(ip, {
@@ -285,7 +285,7 @@ async function getElegooStatus(ip: string): Promise<any> {
   const attemptCheck = shouldAttemptConnection(ip);
   if (!attemptCheck.shouldAttempt) {
     status.error = attemptCheck.reason || 'Connection attempt blocked by retry system';
-    console.log(`[Retry System] ${ip}: ${status.error} - Skipping connection attempt`);
+    // console.log(`[Retry System] ${ip}: ${status.error} - Skipping connection attempt`);
     return status; // Return immediately without any network calls
   }
 
@@ -303,25 +303,25 @@ async function getElegooStatus(ip: string): Promise<any> {
 
   return new Promise((resolve) => {
     let connectionSuccessful = false;
-    
+
     // Wrapper to record attempt result before resolving
     const resolveWithRetryRecord = (finalStatus: any) => {
       // Determine if connection was successful (we got status data, not just an error)
       const success = finalStatus.printer !== null || (finalStatus.job !== null && !finalStatus.error);
       recordConnectionAttempt(ip, success);
-      
+
       if (success) {
-        console.log(`[Retry System] ${ip}: Connection successful, retry count reset`);
+        // console.log(`[Retry System] ${ip}: Connection successful, retry count reset`);
       } else {
         const state = retryStateMap.get(ip);
         const retryCount = state?.retryCount || 0;
         if (retryCount >= MAX_RETRIES) {
-          console.log(`[Retry System] ${ip}: Connection failed, max retries reached. Cooldown period started.`);
+          // console.log(`[Retry System] ${ip}: Connection failed, max retries reached. Cooldown period started.`);
         } else {
-          console.log(`[Retry System] ${ip}: Connection failed, retry count: ${retryCount}/${MAX_RETRIES}`);
+          // console.log(`[Retry System] ${ip}: Connection failed, retry count: ${retryCount}/${MAX_RETRIES}`);
         }
       }
-      
+
       resolve(finalStatus);
     };
     // Try different WebSocket URL formats
@@ -331,14 +331,14 @@ async function getElegooStatus(ip: string): Promise<any> {
     const wsUrls = [
       `ws://${ip}:${WEBSOCKET_PORT}/websocket`,
     ];
-    
+
     // SDCP protocol requires MainboardID and Connection ID
     // For first connection, we'll use placeholder values and try to get attributes first
     // If we have stored attributes, use them; otherwise use defaults
     let mainboardId = 'ffffffff'; // Default placeholder
     let connectionId = '00000000'; // Default placeholder
     let hasAttributes = false;
-    
+
     let timeout: NodeJS.Timeout;
     let ws: WebSocket | null = null;
     let currentUrlIndex = 0;
@@ -392,14 +392,14 @@ async function getElegooStatus(ip: string): Promise<any> {
         ws = new WebSocket(wsUrl, {
           // Try without any specific options first
         });
-        
+
         // Set up message handler BEFORE connection opens
         // This ensures we catch any messages sent immediately upon connection
 
         ws.on('open', () => {
           // Clear connection timeout, set response timeout
           clearTimeout(timeout);
-          
+
           // Listen for any incoming messages first (printer might send unsolicited status)
           // Then send status refresh command after a short delay using proper SDCP format
           setTimeout(() => {
@@ -420,13 +420,13 @@ async function getElegooStatus(ip: string): Promise<any> {
                 Topic: `sdcp/request/${mainboardId}`,
               };
               ws!.send(JSON.stringify(attributesCommand));
-              
+
               // Set timeout for attributes response
               const attrTimeout = setTimeout(() => {
                 // If attributes don't come, try status with placeholder IDs
                 sendStatusRequest();
               }, 3000);
-              
+
               pendingRequests.set(requestId, {
                 resolve: () => {
                   clearTimeout(attrTimeout);
@@ -438,7 +438,7 @@ async function getElegooStatus(ip: string): Promise<any> {
             } else {
               sendStatusRequest();
             }
-            
+
             function sendStatusRequest() {
               const requestId = generateRequestId();
               const command = {
@@ -454,12 +454,12 @@ async function getElegooStatus(ip: string): Promise<any> {
                 Topic: `sdcp/request/${mainboardId}`,
               };
               ws!.send(JSON.stringify(command));
-              
+
               // Track this request
               const statusTimeout = setTimeout(() => {
                 pendingRequests.delete(requestId);
               }, 10000);
-              
+
               pendingRequests.set(requestId, {
                 resolve: () => {
                   clearTimeout(statusTimeout);
@@ -469,7 +469,7 @@ async function getElegooStatus(ip: string): Promise<any> {
                 timeout: statusTimeout,
               });
             }
-            
+
             function sendVideoRequest() {
               // First, disable the video stream to reset any stuck connections
               const disableRequestId = generateRequestId();
@@ -486,12 +486,12 @@ async function getElegooStatus(ip: string): Promise<any> {
                 Topic: `sdcp/request/${mainboardId}`,
               };
               ws!.send(JSON.stringify(disableCommand));
-              
+
               // Track disable request (don't wait for response, just send it)
               const disableTimeout = setTimeout(() => {
                 pendingRequests.delete(disableRequestId);
               }, 2000);
-              
+
               pendingRequests.set(disableRequestId, {
                 resolve: () => {
                   clearTimeout(disableTimeout);
@@ -499,7 +499,7 @@ async function getElegooStatus(ip: string): Promise<any> {
                 },
                 timeout: disableTimeout,
               });
-              
+
               // After a short delay, enable the video stream
               setTimeout(() => {
                 const enableRequestId = generateRequestId();
@@ -516,7 +516,7 @@ async function getElegooStatus(ip: string): Promise<any> {
                   Topic: `sdcp/request/${mainboardId}`,
                 };
                 ws!.send(JSON.stringify(enableCommand));
-                
+
                 // Track this request
                 const videoTimeout = setTimeout(() => {
                   pendingRequests.delete(enableRequestId);
@@ -529,7 +529,7 @@ async function getElegooStatus(ip: string): Promise<any> {
                     }, 1000);
                   }
                 }, 5000);
-                
+
                 pendingRequests.set(enableRequestId, {
                   resolve: () => {
                     clearTimeout(videoTimeout);
@@ -545,7 +545,7 @@ async function getElegooStatus(ip: string): Promise<any> {
               }, 500); // Wait 500ms after disabling before re-enabling
             }
           }, 500); // Wait 500ms for any initial messages from printer
-          
+
           // Set timeout for response (increased to 10 seconds)
           timeout = setTimeout(() => {
             cleanup();
@@ -562,7 +562,7 @@ async function getElegooStatus(ip: string): Promise<any> {
             const fullResponse = JSON.stringify(response);
             const topic = response.Topic || '';
             // Message received - processing by topic
-            
+
             // Handle messages by Topic (SDCP protocol)
             if (topic.startsWith('sdcp/response/')) {
               // Command response - check RequestID
@@ -575,7 +575,7 @@ async function getElegooStatus(ip: string): Promise<any> {
                   pending.resolve();
                   pendingRequests.delete(requestId);
                 }
-                
+
                 // Handle attributes response
                 if (responseData.Cmd === CMD_REQUEST_ATTRIBUTES) {
                   const attributes = responseData.Data?.Attributes || responseData.Data;
@@ -586,47 +586,47 @@ async function getElegooStatus(ip: string): Promise<any> {
                     // MainboardID and ConnectionID obtained
                   }
                 }
-                
+
                 // Handle video stream response
                 if (responseData.Cmd === CMD_SET_VIDEO_STREAM) {
                   // Log the full response for debugging
-                  console.log('[Elegoo Status] Video stream response:', JSON.stringify(responseData, null, 2));
-                  
+                  // console.log('[Elegoo Status] Video stream response:', JSON.stringify(responseData, null, 2));
+
                   // According to ElegooVideo model, VideoUrl is in Data.Data
                   // Structure: response.Data.Data.VideoUrl
                   const videoData = responseData.Data || {};
                   const nestedData = videoData.Data || {};
-                  
+
                   // Try multiple possible locations for the video URL
-                  const videoUrl = nestedData.VideoUrl 
-                    || videoData.VideoUrl 
+                  const videoUrl = nestedData.VideoUrl
+                    || videoData.VideoUrl
                     || nestedData.video_url
-                    || videoData.video_url 
+                    || videoData.video_url
                     || nestedData.VideoURL
                     || videoData.VideoURL
                     || nestedData.url
                     || videoData.url
                     || responseData.VideoUrl
                     || responseData.video_url;
-                  
+
                   // Also check Ack status (0 = success)
                   const ack = nestedData.Ack !== undefined ? nestedData.Ack : (videoData.Ack !== undefined ? videoData.Ack : -1);
-                  
-                  console.log('[Elegoo Status] Extracted video URL:', videoUrl);
-                  console.log('[Elegoo Status] Ack status:', ack);
-                  
+
+                  // console.log('[Elegoo Status] Extracted video URL:', videoUrl);
+                  // console.log('[Elegoo Status] Ack status:', ack);
+
                   if (videoUrl) {
                     status.video = {
                       url: videoUrl,
                       status: ack === 0 ? 'enabled' : 'error',
                     };
-                    console.log('[Elegoo Status] Video stream URL set:', videoUrl);
+                    // console.log('[Elegoo Status] Video stream URL set:', videoUrl);
                   } else {
-                    console.log('[Elegoo Status] WARNING: Video URL not found in response');
-                    console.log('[Elegoo Status] ResponseData keys:', Object.keys(responseData));
-                    console.log('[Elegoo Status] VideoData keys:', Object.keys(videoData));
-                    console.log('[Elegoo Status] NestedData keys:', Object.keys(nestedData));
-                    console.log('[Elegoo Status] Full responseData:', JSON.stringify(responseData, null, 2));
+                    // console.log('[Elegoo Status] WARNING: Video URL not found in response');
+                    // console.log('[Elegoo Status] ResponseData keys:', Object.keys(responseData));
+                    // console.log('[Elegoo Status] VideoData keys:', Object.keys(videoData));
+                    // console.log('[Elegoo Status] NestedData keys:', Object.keys(nestedData));
+                    // console.log('[Elegoo Status] Full responseData:', JSON.stringify(responseData, null, 2));
                   }
                 }
               }
@@ -644,31 +644,31 @@ async function getElegooStatus(ip: string): Promise<any> {
               }
             } else if (!topic) {
               // Fallback: check for status data in response (legacy format or no topic)
-              const hasStatusData = response.Status !== undefined || 
-                                   response.CurrentStatus !== undefined || 
-                                   response.PrintInfo !== undefined ||
-                                   response.TempOfUVLED !== undefined ||
-                                   response.TempOfBox !== undefined;
-              
+              const hasStatusData = response.Status !== undefined ||
+                response.CurrentStatus !== undefined ||
+                response.PrintInfo !== undefined ||
+                response.TempOfUVLED !== undefined ||
+                response.TempOfBox !== undefined;
+
               if (hasStatusData) {
                 processStatusData(response);
               }
             }
-            
+
             function processStatusData(data: any) {
               // Check if this message contains status data
-              const hasStatusData = data.Status !== undefined || 
-                                   data.CurrentStatus !== undefined || 
-                                   data.PrintInfo !== undefined ||
-                                   data.TempOfUVLED !== undefined ||
-                                   data.TempOfBox !== undefined ||
-                                   (data.Data && (data.Data.Status || data.Data.CurrentStatus));
-              
+              const hasStatusData = data.Status !== undefined ||
+                data.CurrentStatus !== undefined ||
+                data.PrintInfo !== undefined ||
+                data.TempOfUVLED !== undefined ||
+                data.TempOfBox !== undefined ||
+                (data.Data && (data.Data.Status || data.Data.CurrentStatus));
+
               if (!hasStatusData) return;
-              
+
               // Clear any pending timeout
               clearTimeout(timeout);
-              
+
               // Check for errors
               if (data.Ack !== undefined && data.Ack !== 0) {
                 status.error = `SDCP error: ${data.Ack}`;
@@ -685,7 +685,7 @@ async function getElegooStatus(ip: string): Promise<any> {
               const statusData = data.Status || data.Data?.Status || data.Data || data;
               const currentStatus = statusData.CurrentStatus;
               const printInfo = statusData.PrintInfo || statusData;
-              
+
               // Parsing status data
 
               // Map printer status
@@ -693,7 +693,7 @@ async function getElegooStatus(ip: string): Promise<any> {
                 state: getStatusText(currentStatus || 0),
                 flags: {
                   operational: true,
-                  printing: Array.isArray(currentStatus) 
+                  printing: Array.isArray(currentStatus)
                     ? currentStatus[0] === ElegooMachineStatus.PRINTING
                     : currentStatus === ElegooMachineStatus.PRINTING,
                   paused: false, // SDCP doesn't have a paused state, it's part of printing
@@ -720,7 +720,7 @@ async function getElegooStatus(ip: string): Promise<any> {
                 const progress = printInfo.Progress !== undefined ? printInfo.Progress : null;
                 const currentLayer = printInfo.CurrentLayer;
                 const totalLayers = printInfo.TotalLayer;
-                
+
                 // Calculate progress from layers if not provided
                 let completion = progress;
                 if (completion === null && currentLayer !== undefined && totalLayers !== undefined && totalLayers > 0) {
@@ -756,7 +756,7 @@ async function getElegooStatus(ip: string): Promise<any> {
                 resolveWithRetryRecord(status);
               }, 1000); // Wait 1 second for potential additional updates
             }
-            
+
             // Handle response messages that might contain status in Data.Status
             if (topic.startsWith('sdcp/response/')) {
               const responseData = response.Data;
@@ -772,22 +772,22 @@ async function getElegooStatus(ip: string): Promise<any> {
         });
 
         ws.on('error', (error: Error) => {
-          console.error(`WebSocket error on ${wsUrl}:`, error.message);
+          // console.error(`WebSocket error on ${wsUrl}:`, error.message);
           cleanup();
-          
+
           // If it's "Unexpected server response: 200", try next URL
           if (error.message.includes('Unexpected server response')) {
-            console.log(`Server responded with HTTP instead of WebSocket, trying next URL...`);
+            // console.log(`Server responded with HTTP instead of WebSocket, trying next URL...`);
             tryConnect(urlIndex + 1);
             return;
           }
-          
+
           // For other errors, try next URL or fail
           if (urlIndex < wsUrls.length - 1) {
             tryConnect(urlIndex + 1);
             return;
           }
-          
+
           // All URLs failed
           if (error.message.includes('ECONNREFUSED')) {
             status.error = `Connection refused on port ${WEBSOCKET_PORT}. The printer may be offline or the WebSocket server is not running.`;
@@ -805,7 +805,7 @@ async function getElegooStatus(ip: string): Promise<any> {
             const reasonStr = reason.toString();
             // If connection closed before we got data, try next URL
             if (urlIndex < wsUrls.length - 1 && code !== 1000) {
-              console.log(`Connection closed unexpectedly (code: ${code}), trying next URL...`);
+              // console.log(`Connection closed unexpectedly (code: ${code}), trying next URL...`);
               cleanup();
               tryConnect(urlIndex + 1);
               return;

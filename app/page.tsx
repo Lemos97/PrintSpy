@@ -58,6 +58,14 @@ interface PrinterStatus {
   error: string | null;
 }
 
+interface StorageFile {
+  name: string;
+  usedSize: number;
+  totalSize: number;
+  storageType: number;
+  type: number; // 0 = folder, 1 = file
+}
+
 interface Printer {
   id: string;
   name: string;
@@ -93,6 +101,14 @@ export default function Home() {
   // Use ref to store captured frames synchronously (available immediately, not async like state)
   const capturedFramesRefSync = useRef<Record<string, string>>({});
   const [fullscreenPrinterId, setFullscreenPrinterId] = useState<string | null>(null);
+
+  // Storage browser state
+  const [storagePrinterId, setStoragePrinterId] = useState<string | null>(null);
+  const [storageFiles, setStorageFiles] = useState<StorageFile[]>([]);
+  const [storagePath, setStoragePath] = useState('/local/');
+  const [storageTab, setStorageTab] = useState<'local' | 'usb'>('local');
+  const [storageLoading, setStorageLoading] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
 
   // Load printers from localStorage on mount
   useEffect(() => {
@@ -545,6 +561,83 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [fullscreenPrinterId]);
 
+  // Storage browser handlers
+  const fetchStorageFiles = async (printerId: string, path: string) => {
+    const printer = printers.find(p => p.id === printerId);
+    if (!printer) return;
+    setStorageLoading(true);
+    setStorageError(null);
+    setStorageFiles([]);
+    try {
+      const res = await fetch('/api/files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip: printer.ip, path }),
+      });
+      const data = await res.json();
+      if (data.error) setStorageError(data.error);
+      else setStorageFiles(data.files || []);
+    } catch (e: any) {
+      setStorageError(e.message || 'Failed to fetch files');
+    } finally {
+      setStorageLoading(false);
+    }
+  };
+
+  const handleOpenStorage = (printerId: string) => {
+    setStoragePrinterId(printerId);
+    setStorageTab('local');
+    setStoragePath('/local/');
+    fetchStorageFiles(printerId, '/local/');
+  };
+
+  const handleCloseStorage = () => {
+    setStoragePrinterId(null);
+    setStorageFiles([]);
+    setStoragePath('/local/');
+    setStorageTab('local');
+    setStorageError(null);
+  };
+
+  const handleStorageTabChange = (tab: 'local' | 'usb') => {
+    if (!storagePrinterId) return;
+    const newPath = tab === 'local' ? '/local/' : '/usb/';
+    setStorageTab(tab);
+    setStoragePath(newPath);
+    fetchStorageFiles(storagePrinterId, newPath);
+  };
+
+  const handleNavigateFolder = (folderPath: string) => {
+    if (!storagePrinterId) return;
+    const p = folderPath.endsWith('/') ? folderPath : folderPath + '/';
+    setStoragePath(p);
+    fetchStorageFiles(storagePrinterId, p);
+  };
+
+  const handleBreadcrumbNavigate = (targetPath: string) => {
+    if (!storagePrinterId) return;
+    setStoragePath(targetPath);
+    fetchStorageFiles(storagePrinterId, targetPath);
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
+  };
+
+  const getStorageBreadcrumbs = (): { label: string; path: string }[] => {
+    const parts = storagePath.split('/').filter(Boolean);
+    const crumbs: { label: string; path: string }[] = [];
+    let cur = '/';
+    for (const part of parts) {
+      cur += part + '/';
+      crumbs.push({ label: part, path: cur });
+    }
+    return crumbs;
+  };
+
   // Store image element refs for each printer
   const imageRefsRef = useRef<Record<string, HTMLImageElement | null>>({});
 
@@ -799,12 +892,11 @@ export default function Home() {
               <div className="printer-header">
                 <div className="printer-name">{printer.name}</div>
                 <div className="printer-actions">
-                  <button className="btn-edit" onClick={() => handleEdit(printer.id)}>
-                    Edit
-                  </button>
-                  <button className="btn-delete" onClick={() => handleDelete(printer.id)}>
-                    Delete
-                  </button>
+                  {printer.printerType === 'Elegoo' && (
+                    <button className="btn-files" onClick={() => handleOpenStorage(printer.id)}>📁 Files</button>
+                  )}
+                  <button className="btn-edit" onClick={() => handleEdit(printer.id)}>Edit</button>
+                  <button className="btn-delete" onClick={() => handleDelete(printer.id)}>Delete</button>
                 </div>
               </div>
               <div className="printer-feed">
@@ -1198,6 +1290,89 @@ export default function Home() {
                         : printer.streamPath && printer.streamPath.startsWith('rtsp://')
                           ? 'RTSP stream - Loading...'
                           : 'No stream URL'}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Storage Browser Modal */}
+      {storagePrinterId && (() => {
+        const printer = printers.find(p => p.id === storagePrinterId);
+        if (!printer) return null;
+        const breadcrumbs = getStorageBreadcrumbs();
+        const sortedFiles = [...storageFiles].sort((a, b) => {
+          if (a.type !== b.type) return a.type - b.type;
+          const na = a.name.split('/').pop() || a.name;
+          const nb = b.name.split('/').pop() || b.name;
+          return na.localeCompare(nb);
+        });
+        return (
+          <div className="storage-modal-overlay" onClick={handleCloseStorage}>
+            <div className="storage-modal-content" onClick={e => e.stopPropagation()}>
+              <div className="storage-modal-header">
+                <h2>📁 {printer.name} — Storage</h2>
+                <button className="modal-close" onClick={handleCloseStorage} aria-label="Close">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </div>
+              <div className="storage-tabs">
+                <button className={`storage-tab${storageTab === 'local' ? ' active' : ''}`} onClick={() => handleStorageTabChange('local')}>💾 Local</button>
+                <button className={`storage-tab${storageTab === 'usb' ? ' active' : ''}`} onClick={() => handleStorageTabChange('usb')}>🔌 USB</button>
+              </div>
+              <div className="storage-breadcrumb">
+                <button className="breadcrumb-item breadcrumb-root" onClick={() => handleBreadcrumbNavigate(storageTab === 'local' ? '/local/' : '/usb/')}>
+                  {storageTab === 'local' ? 'Local' : 'USB'}
+                </button>
+                {breadcrumbs.slice(1).map((bc, i) => (
+                  <span key={i}>
+                    <span className="breadcrumb-separator">/</span>
+                    <button className="breadcrumb-item" onClick={() => handleBreadcrumbNavigate(bc.path)}>{bc.label}</button>
+                  </span>
+                ))}
+              </div>
+              <div className="storage-body">
+                {storageLoading ? (
+                  <div className="storage-loading"><div className="storage-spinner"/><span>Loading files…</span></div>
+                ) : storageError ? (
+                  <div className="storage-error">
+                    <span>⚠️ {storageError}</span>
+                    <button className="btn-retry" onClick={() => storagePrinterId && fetchStorageFiles(storagePrinterId, storagePath)}>Retry</button>
+                  </div>
+                ) : sortedFiles.length === 0 ? (
+                  <div className="storage-empty">No files found in this directory.</div>
+                ) : (
+                  <div className="storage-file-list">
+                    <div className="storage-file-header">
+                      <span className="file-col-name">Name</span>
+                      <span className="file-col-size">Size</span>
+                      <span className="file-col-action"/>
+                    </div>
+                    {sortedFiles.map((file, idx) => {
+                      const fileName = file.name.split('/').filter(Boolean).pop() || file.name;
+                      const isFolder = file.type === 0;
+                      return (
+                        <div
+                          key={idx}
+                          className={`storage-file-row${isFolder ? ' folder-row' : ' file-row'}`}
+                          onClick={isFolder ? () => handleNavigateFolder(file.name) : undefined}
+                          style={isFolder ? { cursor: 'pointer' } : undefined}
+                        >
+                          <span className="file-col-name">
+                            <span className="file-icon">{isFolder ? '📁' : '📄'}</span>
+                            {fileName}
+                          </span>
+                          <span className="file-col-size">{isFolder ? '—' : formatFileSize(file.usedSize)}</span>
+                          <span className="file-col-action">
+                            {/* Download is not supported by Elegoo firmware */}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

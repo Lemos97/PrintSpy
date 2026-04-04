@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const streamUrl = searchParams.get('url');
 
   if (!streamUrl) {
-    console.log('[Stream Proxy] Missing url parameter');
+    // console.log('[Stream Proxy] Missing url parameter');
     return new Response('Missing url parameter', { status: 400 });
   }
 
@@ -28,11 +28,11 @@ export async function GET(request: NextRequest) {
     decodedUrl = streamUrl;
   }
 
-  console.log(`[Stream Proxy] Proxying stream: ${decodedUrl}`);
+  // console.log(`[Stream Proxy] Proxying stream: ${decodedUrl}`);
 
   // Validate it's an HTTP URL
   if (!decodedUrl.startsWith('http://') && !decodedUrl.startsWith('https://')) {
-    console.log(`[Stream Proxy] Invalid URL format: ${decodedUrl}`);
+    // console.log(`[Stream Proxy] Invalid URL format: ${decodedUrl}`);
     return new Response('Invalid URL format - must be http:// or https://', { status: 400 });
   }
 
@@ -45,18 +45,18 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
-      console.log(`[Stream Proxy] Upstream error: ${response.status} ${response.statusText}`);
+      // console.log(`[Stream Proxy] Upstream error: ${response.status} ${response.statusText}`);
       return new Response(`Upstream error: ${response.status}`, { status: response.status });
     }
 
     if (!response.body) {
-      console.log('[Stream Proxy] No response body');
+      // console.log('[Stream Proxy] No response body');
       return new Response('No response body from upstream', { status: 502 });
     }
 
     // Get content type from upstream
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
-    console.log(`[Stream Proxy] Content-Type: ${contentType}`);
+    // console.log(`[Stream Proxy] Content-Type: ${contentType}`);
 
     // Create response headers with CORS
     const headers = new Headers({
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
       headers,
     });
   } catch (error) {
-    console.error('[Stream Proxy] Error:', error);
+    // console.error('[Stream Proxy] Error:', error);
     return new Response(`Stream proxy error: ${error}`, { status: 500 });
   }
 }
